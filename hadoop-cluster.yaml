@@ -1,0 +1,285 @@
+heat_template_version: 2013-05-23
+
+description: >
+  HOT template - deploys salt master server in order to deploy an hadoop 
+  master with a numbers of slave
+
+parameters:
+  key_name:
+    type: string
+    description: Keypair name
+    default: my_key
+  image:
+    type: string
+    description: Image name, limited to ubuntu 14.04 (trusty) images
+    default: trusty
+  flavor:
+    type: string
+    description: Flavor
+    default: c2.low
+    constraints:
+      - allowed_values: [c16.med,c16.low,c8.hi,c8.med,c8.low,c4.hi,c4.med,c4.low,c2.low,c2.med,c2.hi]
+  hadoop-image:
+    type: string
+    description: Image name for hadoop, limited to ubuntu 14.04 (trusty) images
+    default: trusty
+  hadoop-flavor:
+    type: string
+    description: Flavor for hadoop instances
+    default: c4.low
+    constraints:
+      - allowed_values: [c16.med,c16.low,c8.hi,c8.med,c8.low,c4.hi,c4.med,c4.low,c2.low,c2.med,c2.hi]
+  hadoop_cluster_size:
+    type: number
+    label: Cluster size (number of hadooop slaves, default to 3)
+    description: Number of slaves in the cluster.
+    default: 3
+  public_net_id:
+    type: string
+    description: ID of the external network, use "neutron net-list" to find the id.
+    default:
+  private_net_id:
+    type: string
+    description: ID of the internal network, use "neutron net-list" to find the id.
+    default: 
+  private_subnet_id:
+    type: string
+    description: ID of private sub network into which servers get deployed, "neutron subnet-list" to find the id.
+    default: 8b3f8bf8-fbfc-4beb-8126-d9cdc27c523f
+
+
+resources:
+  salt-master:
+    type: OS::Nova::Server
+    properties:
+      name: salt-master
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: salt-master_port }
+      user_data_format: RAW
+      user_data: |
+        #cloud-config
+        mounts:
+         - [ ephemeral0, /data, auto, "defaults,noexec" ]
+        apt_sources:
+         - source: "ppa:saltstack/salt"
+        packages:
+         - python-software-properties
+         - salt-master
+         - git
+        runcmd:
+         - bash /tmp/bootstrap-master.sh
+        write_files:
+         - content: |
+             #!/bin/bash
+             sed -i 's/^#auto_accept.*$/auto_accept: True/g' /etc/salt/master
+             sed -i 's/^#log_level_logfile: warning$/log_level_logfile: debug/g' /etc/salt/master
+             sudo mkdir -p /srv/salt/formulas
+             git clone https://github.com/saltstack-formulas/hadoop-formula /srv/salt/formulas/hadoop-formula
+             git clone https://github.com/saltstack-formulas/hostsfile-formula /srv/salt/formulas/hostsfile-formula
+             git clone https://github.com/saltstack-formulas/sun-java-formula /srv/salt/formulas/sun-java-formula
+             cd /srv/salt/formulas/hadoop-formula/hadoop/files && ./generate_keypairs.sh
+             sudo service salt-master restart
+           path: /tmp/bootstrap-master.sh
+           permissions: "0755"
+         - content: |
+             file_roots:
+               base:
+                - /srv/salt
+                - /srv/salt/formulas/hadoop-formula
+                - /srv/salt/formulas/hostsfile-formula
+                - /srv/salt/formulas/sun-java-formula
+           path: /etc/salt/master.d/file_roots.conf
+         - content: |
+             pillar_roots:
+               base:
+                 - /srv/pillar
+           path: /etc/salt/master.d/pillar_roots.conf
+         - content: |
+             reactor:
+               - 'salt/minion/*/start':
+                 - '/srv/reactor/custom-reactor.sls'
+           path: /etc/salt/master.d/reactor.conf
+         - content: |
+             base:
+               'G@roles:hadoop_slave or G@roles:hadoop_master':
+                 - match: compound
+                 - hostsfile
+                 - hostsfile.hostname
+                 - sun-java
+                 - sun-java.env
+                 - hadoop
+                 - hadoop.hdfs
+           path: /srv/salt/top.sls
+         - content: |
+             base:
+               'G@roles:hadoop_slave or G@roles:hadoop_master':
+                 - hadoop
+           path: /srv/pillar/top.sls
+         - content: |
+             hadoop:
+               version: hdp-2.2.0 # ['apache-1.2.1', 'apache-2.2.0', 'hdp-1.3.0', 'hdp-2.2.0', 'cdh-4.5.0', 'cdh-4.5.0-mr1']
+               users:
+                 hadoop: 6000
+                 hdfs: 6001
+           path: /srv/pillar/hadoop.sls
+         - content: |
+             highstate_run:
+               cmd.state.highstate:
+                 - tgt: '*'
+                 - queue: true
+                 - batch-size: 6
+           path: /srv/reactor/custom-reactor.sls
+
+
+
+  salt-master_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_param: private_net_id }
+      fixed_ips:
+        - subnet_id: { get_param: private_subnet_id }
+      security_groups: [{ get_resource: hadoop_security_group }]
+
+  salt-master_floating_ip:
+    type: OS::Neutron::FloatingIP
+    properties:
+      floating_network_id: { get_param: public_net_id }
+      port_id: { get_resource: salt-master_port }
+
+  hadoop-master:
+    type: OS::Nova::Server
+    depends_on: salt-master
+    properties:
+      name: hadoop-master
+      image: { get_param: hadoop-image }
+      flavor: { get_param: hadoop-flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: hadoop-master_port }
+      user_data_format: RAW 
+      user_data:
+        str_replace:
+          template: |
+            #cloud-config
+            mounts:
+              - [ ephemeral0, /data, auto, "defaults,noexec" ]
+            apt_sources: 
+              - source: "ppa:saltstack/salt"
+            packages: 
+              - python-software-properties
+              - salt-minion
+            runcmd: 
+              - bash /tmp/bootstrap-minion.sh
+            write_files:
+             - content: |
+                     master: $salt_master_ip
+               path : /etc/salt/minion
+             - content: |
+                     roles:
+                        - hadoop_master
+               path: /etc/salt/grains
+             - content: |
+                    mine_functions:
+                        network.interfaces: []
+                        network.ip_addrs: []
+                        grains.items: []
+               path: /etc/salt/minion.d/mine_functions.conf
+             - content: |
+                    #!/bin/bash
+                    service salt-minion restart
+               path: /tmp/bootstrap-minion.sh
+               permissions: "0755"
+          params:
+            $salt_master_ip: { get_attr: [ salt-master, first_address ] }
+
+
+  hadoop-master_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_param: private_net_id }
+      fixed_ips:
+        - subnet_id: { get_param: private_subnet_id }
+      security_groups: [{ get_resource: hadoop_security_group }]
+
+  hadoop-master_floating_ip:
+    type: OS::Neutron::FloatingIP
+    properties:
+      floating_network_id: { get_param: public_net_id }
+      port_id: { get_resource: hadoop-master_port }
+
+  hadoop_security_group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      description: Add security group rules for server
+      name: hadoop-security-group
+      rules:
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+        - remote_ip_prefix: 204.19.23.2/32
+          protocol: tcp
+          port_range_min: 50070
+          port_range_max: 50070
+        - remote_ip_prefix: 0.0.0.0/0
+
+  hadoop_slave:
+    type: OS::Heat::ResourceGroup
+    depends_on: hadoop-master
+    properties:
+      count: { get_param: hadoop_cluster_size }
+      resource_def: 
+        type: OS::Nova::Server
+        properties:
+          image: { get_param: hadoop-image }
+          flavor: { get_param: hadoop-flavor }
+          key_name: { get_param: key_name }
+          user_data_format: RAW 
+          user_data:
+            str_replace:
+                template: |
+                    #cloud-config
+                    mounts:
+                      - [ ephemeral0, /data, auto, "defaults,noexec" ]
+                    apt_sources: 
+                      - source: "ppa:saltstack/salt"
+                    packages: 
+                      - python-software-properties
+                      - salt-minion
+                    runcmd: 
+                      - bash /tmp/bootstrap-minion.sh
+                    write_files:
+                     - content: |
+                             master: $salt_master_ip
+                       path : /etc/salt/minion
+                     - content: |
+                             roles:
+                                - hadoop_slave
+                       path: /etc/salt/grains
+                     - content: |
+                            mine_functions:
+                                network.interfaces: []
+                                network.ip_addrs: []
+                                grains.items: []
+                       path: /etc/salt/minion.d/mine_functions.conf
+                     - content: |
+                            #!/bin/bash
+                            sleep 30
+                            service salt-minion restart
+                       path: /tmp/bootstrap-minion.sh
+                       permissions: "0755"
+                params:
+                  $salt_master_ip: { get_attr: [ salt-master, first_address ] }
+
+outputs:
+  hadoop-master_public_ip:
+   description: Floating IP address of hadoop-master on public network
+   value: 
+     str_replace:
+       template: http://host:50070
+       params: 
+         host: { get_attr: [ hadoop-master_floating_ip, floating_ip_address ] }
+

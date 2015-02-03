@@ -1,0 +1,19 @@
+
+How to use those files:
+1- with heat command line client:
+ - heat stack-create <name> -f hadoop-cluster.yaml -e example-env.yaml 
+ - heat stack-create <name> -f hadoop-cluster.yaml -P "key_name=my_key;public_net_id=<pub_net_id>;private_net_id=<priv_net_id>;private_subnet_id=<subnet_id>"
+2- with horizon:
+ - login horizon:
+  > Orchestration 
+   > Stacks
+    > Launch stack 
+     > select file in "Template Source":
+      > browse to get the hadoop-cluster.yaml
+    > click on next
+     > fill out the needed 
+      key_name: put the name of your ssh key
+      public_net_id: id of the public network, from "neutron net-list" command.
+      private_net_id: id of the private network, from "neutron net-list" command.
+      private_subnet_id: id of the private subnet, from "neutron subnet-list" command.
+      note: password for user "username" is not required, just type a random string into the field
