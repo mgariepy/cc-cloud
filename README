@@ -1,8 +1,8 @@
 
 How to use those files:
 1- with heat command line client:
- - heat stack-create <name> -f hadoop-cluster.yaml -e example-env.yaml 
- - heat stack-create <name> -f hadoop-cluster.yaml -P "key_name=my_key;public_net_id=<pub_net_id>;private_net_id=<priv_net_id>;private_subnet_id=<subnet_id>"
+ - heat stack-create <name> -f hadoop/hadoop-cluster.yaml -e hadoop/example-env.yaml 
+ - heat stack-create <name> -f hadoop/hadoop-cluster.yaml -P "key_name=my_key;public_net_id=<pub_net_id>;private_net_id=<priv_net_id>;private_subnet_id=<subnet_id>"
 2- with horizon:
  - login horizon:
   > Orchestration 

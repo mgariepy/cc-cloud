@@ -1,0 +1,121 @@
+heat_template_version: 2013-05-23
+
+description: >
+  HOT template - wordpress single 
+
+parameters:
+  key_name:
+    type: string
+    description: Keypair name
+    default: my_key
+  image:
+    type: string
+    description: Image name, limited to ubuntu 14.04 (trusty) images
+    default: Ubuntu_14.04_Trusty-amd64-20150708
+  flavor:
+    type: string
+    description: Flavor
+    default: c1-3.75gb-36 
+  public_net_id:
+    type: string
+    description: ID of the external network, use "neutron net-list" to find the id.
+    default: f6a2af4a-f7c2-4d68-9c28-63714c931ec0
+  private_net_id:
+    type: string
+    description: ID of the internal network, use "neutron net-list" to find the id.
+    default:
+  private_subnet_id:
+    type: string
+    description: ID of private sub network into which servers get deployed, "neutron subnet-list" to find the id.
+    default:
+
+resources:
+  wp-server:
+    type: OS::Nova::Server
+    properties:
+      name: wp-server
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: wp-server_port }
+      user_data_format: RAW
+      user_data: |
+        #cloud-config
+        packages:
+         - mysql-server
+         - php5
+         - php5-mysql
+         - libapache2-mod-php5
+         - curl
+         - postfix
+         - mlocate
+        runcmd:
+         - bash /tmp/bootstrap-wp.sh
+        write_files:
+         - content: |
+             #!/bin/bash
+             DB_PASSWORD=$(</dev/urandom tr -dc _A-Z-a-z-0-9 | head -c16) 
+             DB_NAME="wordpress"
+             DB_USER="wordpress"
+             DB_HOST=localhost
+             wget http://wordpress.org/latest.tar.gz -O /tmp/latest.tar.gz
+             tar xf /tmp/latest.tar.gz -C /var/www/
+             mysql <<EOF
+             CREATE DATABASE $DB_NAME;
+             GRANT SELECT,INSERT,UPDATE,DELETE,CREATE,DROP,ALTER
+             ON $DB_NAME.*
+             TO $DB_USER@$DB_HOST
+             IDENTIFIED BY '$DB_PASSWORD';
+             FLUSH PRIVILEGES;
+             EOF
+             cp /var/www/wordpress/wp-config-sample.php /var/www/wordpress/wp-config.php
+             sed -i "s/database_name_here/$DB_NAME/g" /var/www/wordpress/wp-config.php
+             sed -i "s/password_here/$DB_PASSWORD/g" /var/www/wordpress/wp-config.php
+             sed -i "s/username_here/$DB_USER/g" /var/www/wordpress/wp-config.php
+             for i in `seq 1 8`; do
+               key=$(</dev/urandom tr -dc _A-Z-a-z-0-9 | head -c64)
+               sed -i "0,/put your unique phrase here/s/put your unique phrase here/$key/" /var/www/wordpress/wp-config.php
+             done
+             mv /var/www/wordpress /var/www/html/
+           path: /tmp/bootstrap-wp.sh
+           permissions: "0755"
+
+  wp-server_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_param: private_net_id }
+      fixed_ips:
+        - subnet_id: { get_param: private_subnet_id }
+      security_groups: [{ get_resource: wp-security_group }]
+
+  wp-server_floating_ip:
+    type: OS::Neutron::FloatingIP
+    properties:
+      port_id: { get_resource: wp-server_port }
+      floating_network_id: { get_param: public_net_id }
+
+  wp-security_group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      description: Add security group rules for server
+      name: wp-security_group
+      rules:
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+        - remote_ip_prefix: 204.19.23.2/32
+          protocol: tcp
+          port_range_min: 80
+          port_range_max: 80
+
+outputs:
+  wp-server-address-config:
+   description: configure your site here, you might need to wait a bit for the script to finish. 
+   value: 
+     str_replace:
+       template: http://host/wordpress/wp-admin/install.php
+       params: 
+         host: { get_attr: [ wp-server_floating_ip, floating_ip_address ] }
+

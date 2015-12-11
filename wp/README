@@ -1,0 +1,21 @@
+wp-single:
+
+info you need:
+ * private network id: Dashboard > Network > Networks > click on the name | copy the id string from there.
+* subnet id:  Dashboard > Network > Networks > click on the name > click on the subnet name | copy the id from there.
+
+to start a stack:
+  * Go in orchestration > stacks > launch stack 
+     > select File, browse to find the wp-single.yaml then click Next.
+  * name your stack
+  * enter a random string for the password  (not used for this demo)
+  * enter your key name
+  * image and public net are already configured.
+  * copy your private net id , and you subnet id.
+  * click launch
+
+it can take a few minutes to complete.
+after this you can: Dashboard > Orchestration > stacks > click on your stack name >  then the Overview tab.
+in the Output section, you should have the URL to finish installing WP.
+enjoys!
+
