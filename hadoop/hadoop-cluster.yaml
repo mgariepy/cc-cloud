@@ -18,15 +18,15 @@ parameters:
     description: Flavor
     default: c2.low
     constraints:
-      - allowed_values: [c16.med,c16.low,c8.hi,c8.med,c8.low,c4.hi,c4.med,c4.low,c2.low,c2.med,c2.hi]
+      - allowed_values: [c2-3.75gb-92,c1-3.75gb-36,p8-6gb,c4-7.5gb-205,c2-7.5gb-92]
   hadoop-image:
     type: string
     description: Image name for hadoop, limited to ubuntu 14.04 (trusty) images
-    default: trusty
+    default: Ubuntu_14.04_Trusty-amd64-20150708
   hadoop-flavor:
     type: string
     description: Flavor for hadoop instances
-    default: c4.low
+    default: c2-3.75gb-92
     constraints:
       - allowed_values: [c16.med,c16.low,c8.hi,c8.med,c8.low,c4.hi,c4.med,c4.low,c2.low,c2.med,c2.hi]
   hadoop_cluster_size:
