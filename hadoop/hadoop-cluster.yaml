@@ -12,7 +12,7 @@ parameters:
   image:
     type: string
     description: Image name, limited to ubuntu 14.04 (trusty) images
-    default: trusty
+    default: Ubuntu_14.04_Trusty-amd64-20150708
   flavor:
     type: string
     description: Flavor
