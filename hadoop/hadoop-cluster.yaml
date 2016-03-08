@@ -16,7 +16,7 @@ parameters:
   flavor:
     type: string
     description: Flavor
-    default: c2.low
+    default: c2-3.75gb-92
     constraints:
       - allowed_values: [c2-3.75gb-92,c1-3.75gb-36,p8-6gb,c4-7.5gb-205,c2-7.5gb-92]
   hadoop-image:
